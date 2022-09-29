@@ -17,12 +17,26 @@ async def check_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool
         return False
     return True
 
+async def check_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if str(update.effective_user.id) not in config['admins']:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Только админ может пользоваться этой функцией. Ты не он")
+        return False
+    return True
+
 async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(f'Hello {update.effective_user.first_name, update.effective_user.id}')
 
 async def make_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await check_admin(update, context):
+        return
     context.chat_data['queue'] = []
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Queue created")
+
+async def delete_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not (await check_queue(update, context) or await check_admin(update, context)):
+        return
+    del context.chat_data['queue']
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="Очередь удалена")
 
 async def add_to_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not (await check_queue(update, context) or await check_user(update, context)):
@@ -49,8 +63,10 @@ async def remove_from_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 app = ApplicationBuilder().token(config["token"]).build()
 
-# app.add_handler(CommandHandler("hello", hello))
+app.add_handler(CommandHandler("hello", hello))
 app.add_handler(CommandHandler('create', make_queue))
+app.add_handler(CommandHandler('delete', delete_queue))
 app.add_handler(CommandHandler('add', add_to_queue))
 app.add_handler(CommandHandler('show', show_queue))
+app.add_handler(CommandHandler('remove', remove_from_queue))
 app.run_polling()
