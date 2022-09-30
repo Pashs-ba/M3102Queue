@@ -1,3 +1,4 @@
+from venv import create
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 import toml
@@ -5,68 +6,106 @@ import toml
 with open("config.toml") as f:
     config = toml.load(f)
 
-async def check_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    if 'queue' not in context.chat_data:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Очередь не создана")
+    
+async def check_queue(update: Update, context: ContextTypes.DEFAULT_TYPE, key: str, text="Очередь не создана") -> bool:
+    if not key in context.chat_data["queue"]:
+        await update.message.reply_text(text=text)
         return False
     return True
 
-async def check_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    if update.effective_user in context.chat_data['queue']:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Вы уже в очереди")
+async def check_user(update: Update, context: ContextTypes.DEFAULT_TYPE, key: str) -> bool:
+    if update.effective_user in context.chat_data["queue"][key]:
+        await update.message.reply_text(text="Вы уже в очереди")
         return False
+    
     return True
 
 async def check_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if str(update.effective_user.id) not in config['admins']:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Только админ может пользоваться этой функцией. Ты не он")
+        await update.message.reply_text(text="Только админ может пользоваться этой функцией.\n БАН БАН БАН")
         return False
     return True
 
-async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(f'Hello {update.effective_user.first_name, update.effective_user.id}')
 
-async def make_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not await check_admin(update, context):
+async def add_queue(update, context):
+    if not "queue" in context.chat_data:
+        context.chat_data["queue"] = dict()
+    
+    key = update.message.text.partition(' ')[2] or "queue"
+    if not (await check_admin(update, context)):
         return
-    context.chat_data['queue'] = []
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="Queue created")
+    if key in context.chat_data["queue"]:
+        await update.message.reply_text(text="Такая очередь уже создана")
+        return False
+    context.chat_data['queue'][key] = []
+    await update.message.reply_text(f"Queue {key} created!")
 
-async def delete_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not (await check_queue(update, context) or await check_admin(update, context)):
+
+async def delete_queue(update, context):
+    key = update.message.text.partition(' ')[2] or "queue"
+    if not( await check_queue(update, context, key)  and await check_admin(update, context)):
         return
-    del context.chat_data['queue']
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="Очередь удалена")
+    del context.chat_data["queue"][key]
+    await update.message.reply_html(f"Queue {key} deleted!")
 
-async def add_to_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not (await check_queue(update, context) or await check_user(update, context)):
+
+async def add_a_person(update, context):
+    key = update.message.text.partition(' ')[2] or "queue"
+    if not await check_queue(update, context, key):
         return
-    context.chat_data['queue'].append(update.effective_user)
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=f"{update.effective_user.username} добавлен в группу, место в очереди {len(context.chat_data['queue'])}")
-
-async def show_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not await check_queue(update, context):
+    if not await check_user(update, context, key):
         return
-    queue = list(map(lambda x: x.username, context.chat_data['queue']))
-    data = ""
-    for i in range(len(queue)):
-        data += f"{i+1}. {queue[i]}\n"
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=data)
 
-async def remove_from_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not (await check_queue(update, context) or await check_user(update, context)):
+    user = update.effective_user
+
+    if user not in context.chat_data["queue"][key]:
+        context.chat_data['queue'][key].append(user)
+
+    await update.message.reply_text(f"You're the {context.chat_data['queue'][key].index(user) + 1}-th")
+
+
+async def remove_a_person(update, context):
+    key = update.message.text.partition(' ')[2] or "queue"
+    if not (await check_queue(update, context, key)):
         return
-    context.chat_data['queue'].remove(update.effective_user)
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=f"{update.effective_user.username} удален из очереди")
+    if update.effective_user not in context.chat_data["queue"][key]:
+        await update.message.reply_text(text="Вас нет в очереди")
+        return
+    user = update.effective_user
+
+    if user in context.chat_data["queue"][key]:
+        context.chat_data["queue"][key].remove(user)
+    await update.message.reply_text(f"Done")
+
+
+async def show_queue(update, context):
+    key = update.message.text.partition(' ')[2] or "queue"
+    if not await check_queue(update, context, key):
+        return
+
+    queue = ""
+    for i, j in enumerate(context.chat_data["queue"][key]):
+        k = f"{j['first_name']} {j['last_name']}"
+        queue += f"{i+1}. {k}\n"
+
+    await update.message.reply_text(queue or "Empty")
 
 
 
-app = ApplicationBuilder().token(config["token"]).build()
+async def show_active(update, context):
+    queues = ""
+    for i, j in enumerate(context.chat_data["queue"]):
+        queues += f"{i+1}. {j}\n"
+    await update.message.reply_html(queues or "Empty")
 
-app.add_handler(CommandHandler("hello", hello))
-app.add_handler(CommandHandler('create', make_queue))
-app.add_handler(CommandHandler('delete', delete_queue))
-app.add_handler(CommandHandler('add', add_to_queue))
-app.add_handler(CommandHandler('show', show_queue))
-app.add_handler(CommandHandler('remove', remove_from_queue))
-app.run_polling()
+
+if __name__ == "__main__":
+    app = ApplicationBuilder().token(config["token"]).build()
+
+    app.add_handler(CommandHandler('create', add_queue))
+    app.add_handler(CommandHandler('delete', delete_queue))
+    app.add_handler(CommandHandler('add', add_a_person))
+    app.add_handler(CommandHandler('show', show_queue))
+    app.add_handler(CommandHandler('remove', remove_a_person))
+    app.add_handler(CommandHandler("active", show_active))
+    app.run_polling()
