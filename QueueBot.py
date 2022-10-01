@@ -5,18 +5,21 @@ import toml
 with open("config.toml") as f:
     config = toml.load(f)
 
+Timeout = 100
 
 
 async def check_queue(update: Update, context: ContextTypes.DEFAULT_TYPE, key: str, text="Очередь не создана.") -> bool:
     if key not in context.chat_data["queue"]:
-        await update.message.reply_text(text=text)
+        await update.message.reply_text(text=text, read_timeout=Timeout, write_timeout=Timeout,
+                                        pool_timeout=Timeout, connect_timeout=Timeout)
         return False
     return True
 
 
 async def check_user(update: Update, context: ContextTypes.DEFAULT_TYPE, key: str) -> bool:
     if update.effective_user in context.chat_data["queue"][key]:
-        await update.message.reply_text(text="Вы уже в этой очереди.")
+        await update.message.reply_text(text="Вы уже в этой очереди.", read_timeout=Timeout, write_timeout=Timeout,
+                                        pool_timeout=Timeout, connect_timeout=Timeout)
         return False
 
     return True
@@ -24,7 +27,8 @@ async def check_user(update: Update, context: ContextTypes.DEFAULT_TYPE, key: st
 
 async def check_admin(update: Update) -> bool:
     if str(update.effective_user.id) not in config['admins']:
-        await update.message.reply_text(text="Только админ может пользоваться этой функцией.")
+        await update.message.reply_text(text="Только админ может пользоваться этой функцией.", read_timeout=Timeout,
+                                        write_timeout=Timeout, pool_timeout=Timeout, connect_timeout=Timeout)
         return False
     return True
 
@@ -34,10 +38,12 @@ async def add_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await check_admin(update):
         return
     if key in context.chat_data["queue"]:
-        await update.message.reply_text(text="Такая очередь уже создана.")
+        await update.message.reply_text(text="Такая очередь уже создана.", read_timeout=Timeout, write_timeout=Timeout,
+                                        pool_timeout=Timeout, connect_timeout=Timeout)
         return
     context.chat_data['queue'][key] = []
-    await update.message.reply_text(f"Очередь {key} создана!")
+    await update.message.reply_text(f"Очередь {key} создана!", read_timeout=Timeout, write_timeout=Timeout,
+                                    pool_timeout=Timeout, connect_timeout=Timeout)
 
 
 async def delete_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -45,7 +51,8 @@ async def delete_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not (await check_queue(update, context, key) and await check_admin(update)):
         return
     del context.chat_data["queue"][key]
-    await update.message.reply_html(f"Очередь {key} удалена!")
+    await update.message.reply_text(f"Очередь {key} удалена!", read_timeout=Timeout, write_timeout=Timeout,
+                                    pool_timeout=Timeout, connect_timeout=Timeout)
 
 
 async def add_a_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -62,7 +69,8 @@ async def add_a_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     await update.message.reply_text(
         f"Вы добавлены в очередь {key}.\n"
-        f"Вы находитесь под номером {context.chat_data['queue'][key].index(user) + 1}.")
+        f"Вы находитесь под номером {context.chat_data['queue'][key].index(user) + 1}.", read_timeout=Timeout,
+        write_timeout=Timeout, pool_timeout=Timeout, connect_timeout=Timeout)
 
 
 async def remove_a_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -70,13 +78,15 @@ async def remove_a_person(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not (await check_queue(update, context, key)):
         return
     if update.effective_user not in context.chat_data["queue"][key]:
-        await update.message.reply_text(text="Вас нет в очереди.")
+        await update.message.reply_text(text="Вас нет в очереди.", read_timeout=Timeout, write_timeout=Timeout,
+                                        pool_timeout=Timeout, connect_timeout=Timeout)
         return
     user = update.effective_user
 
     if user in context.chat_data["queue"][key]:
         context.chat_data["queue"][key].remove(user)
-    await update.message.reply_text(f"Вас больше нет в очереди.")
+    await update.message.reply_text(f"Вас больше нет в очереди.", read_timeout=Timeout, write_timeout=Timeout,
+                                    pool_timeout=Timeout, connect_timeout=Timeout)
 
 
 async def show_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -86,17 +96,19 @@ async def show_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     queue = ""
     for i, j in enumerate(context.chat_data["queue"][key]):
-        k = f"{j['first_name']} {j['last_name']}"
+        k = f"{j['first_name']} {j['last_name'] or ''}"
         queue += f"{i + 1}. {k}\n"
 
-    await update.message.reply_text(queue or "Пусто.")
+    await update.message.reply_text(queue or "Пусто.", read_timeout=Timeout, write_timeout=Timeout,
+                                    pool_timeout=Timeout, connect_timeout=Timeout)
 
 
 async def show_active(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     queues = ""
     for i, j in enumerate(context.chat_data["queue"]):
         queues += f"{i + 1}. {j}\n"
-    await update.message.reply_text(queues or "Пусто.")
+    await update.message.reply_text(queues or "Пусто.", read_timeout=Timeout, write_timeout=Timeout,
+                                    pool_timeout=Timeout, connect_timeout=Timeout)
 
 
 async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -108,7 +120,8 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"/show <название> - покажет участников очереди\n"
         f"/active - покажет активные очереди\n"
         f"/help - покажет это сообщение\n"
-        f"Если не указывать <название>, то автоматически будет выбрано название queue")
+        f"Если не указывать <название>, то автоматически будет выбрано название queue", read_timeout=Timeout,
+        write_timeout=Timeout, pool_timeout=Timeout, connect_timeout=Timeout)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
