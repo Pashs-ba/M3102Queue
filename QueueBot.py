@@ -1,5 +1,5 @@
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 import toml
 
 with open("config.toml") as f:
@@ -55,8 +55,11 @@ async def delete_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                                     pool_timeout=Timeout, connect_timeout=Timeout)
 
 
-async def add_a_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    key = update.message.text.partition(' ')[2] or "queue"
+async def add_a_person(update: Update, context: ContextTypes.DEFAULT_TYPE, name_of_queue="") -> None:
+    if not name_of_queue:
+        key = update.message.text.partition(' ')[2] or "queue"
+    else:
+        key = name_of_queue
     if not await check_queue(update, context, key):
         return
     if not await check_user(update, context, key):
@@ -75,6 +78,7 @@ async def add_a_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def remove_a_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     key = update.message.text.partition(' ')[2] or "queue"
+
     if not (await check_queue(update, context, key)):
         return
     if update.effective_user not in context.chat_data["queue"][key]:
@@ -99,8 +103,18 @@ async def show_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         k = f"{j['first_name']} {j['last_name'] or ''}"
         queue += f"{i + 1}. {k}\n"
 
-    await update.message.reply_text(queue or "Пусто.", read_timeout=Timeout, write_timeout=Timeout,
-                                    pool_timeout=Timeout, connect_timeout=Timeout)
+    keyword = [[InlineKeyboardButton("Встать в очередь.", callback_data=' '.join(["add", key]))]] # callback_data string only
+
+    await update.message.reply_text(queue or "Пусто.", reply_markup=InlineKeyboardMarkup(keyword), read_timeout=Timeout,
+                                        write_timeout=Timeout,
+                                        pool_timeout=Timeout, connect_timeout=Timeout)
+
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    option, key = query.data.split(' ')
+    if option == "add":
+        # await add_a_person(update, context, key, output_needed=False)
+        await query.answer(text="Кнопка не работает", show_alert=False, read_timeout=Timeout, write_timeout=Timeout, pool_timeout=Timeout, connect_timeout=Timeout)
 
 
 async def show_active(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -136,20 +150,22 @@ async def ping_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if "queue" not in context.chat_data:
         context.chat_data["queue"] = dict()
-    await show_help(update, context)
-
+    await update.message.reply_text("*Звуки успешной активации*", read_timeout=Timeout,
+                                    write_timeout=Timeout, pool_timeout=Timeout, connect_timeout=Timeout)
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(config["token"]).build()
 
-    app.add_handler(CommandHandler('create', add_queue))
-    app.add_handler(CommandHandler('delete', delete_queue))
-    app.add_handler(CommandHandler('add', add_a_person))
-    app.add_handler(CommandHandler('show', show_queue))
-    app.add_handler(CommandHandler('remove', remove_a_person))
-    app.add_handler(CommandHandler("active", show_active))
-    app.add_handler(CommandHandler("help", show_help))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("all", ping_all))
+    app.add_handler(CommandHandler("help", show_help))
+    app.add_handler(CommandHandler('show', show_queue))
+    app.add_handler(CommandHandler('add', add_a_person))
+    app.add_handler(CommandHandler('create', add_queue))
+    app.add_handler(CommandHandler("active", show_active))
+    app.add_handler(CommandHandler('delete', delete_queue))
+    app.add_handler(CommandHandler('remove', remove_a_person))
+
+    app.add_handler(CallbackQueryHandler(button))
 
     app.run_polling()
