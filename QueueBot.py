@@ -124,6 +124,15 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         write_timeout=Timeout, pool_timeout=Timeout, connect_timeout=Timeout)
 
 
+async def ping_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await check_admin(update):
+        return
+
+    to_ping = "Что-то важненькое происходит! " + " ".join([i for i in config['ID_to_ping']])
+    await update.message.reply_text(to_ping, read_timeout=Timeout,
+                                    write_timeout=Timeout, pool_timeout=Timeout, connect_timeout=Timeout)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if "queue" not in context.chat_data:
         context.chat_data["queue"] = dict()
@@ -141,5 +150,6 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("active", show_active))
     app.add_handler(CommandHandler("help", show_help))
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("all", ping_all))
 
     app.run_polling()
