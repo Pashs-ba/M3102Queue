@@ -2,72 +2,74 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import toml
 
-with open("config.toml") as f:
-    config = toml.load(f)
+config = toml.load("config.toml")
 
 Timeout = 100
 
 
 class Queue:
-    def append(self, obj):
-        self.__normal.append(obj)
+    def __init__(self):
+        self._normal = []
+        self._priority = []
 
-    def append_priority(self, obj):
-        self.__priority.append(obj)
+    def __iter__(self):
+        return iter(self._priority + self._normal)
 
-    def show(self):
-        queue = ""
-        if self.__priority:
-            queue += "Приоритет:\n"
-            for i, j in enumerate(self.__priority):
-                k = f"{j['first_name']} {j['last_name'] or ''}"
-                queue += f"{i + 1}. {k}\n"
-        if self.__normal:
-            queue += "Плебеи:\n"
-            for i, j in enumerate(self.__normal):
-                k = f"{j['first_name']} {j['last_name'] or ''}"
-                queue += f"{i + 1}. {k}\n"
-        return queue
+    def __contains__(self, user):
+        return user in self._normal or user in self._priority
 
-    def iter(self):
-        return self.__priority + self.__normal
+    def __str__(self):
+        return "Приоритет:\n" + "\n".join(
+            f"{i}. {user['first_name']} {user['last_name'] or ''}" for i, user in enumerate(self._priority, 1)
+        ) + "\nОбычные:\n" + "\n".join(
+            f"{i}. {user['first_name']} {user['last_name'] or ''}" for i, user in enumerate(self._normal, 1)
+        )
 
-    def index(self, user):
-        return self.__normal.index(user)
+    def append(self, user, priority=False):
+        if priority:
+            self._priority.append(user)
+            return len(self._priority)
+        else:
+            self._normal.append(user)
+            return len(self._normal) + len(self._priority)
 
     def remove(self, user):
-        if user in self.__priority:
-            self.__priority.remove(user)
-        elif user in self.__normal:
-            self.__normal.remove(user)
-
-    def count(self):
-        return len(self.__normal), len(self.__priority)
-
-    def get(self, index, queue_type="n"):
-        if queue_type == "n":
-            return self.__normal[index]
-        else:
-            return self.__priority[index]
-
-    __priority = []
-    __normal = []
+        if user in self._priority:
+            self._priority.remove(user)
+        elif user in self._normal:
+            self._normal.remove(user)
 
 
-async def check_queue(update: Update, context: ContextTypes.DEFAULT_TYPE, key: str, text="Очередь не создана.") -> bool:
+# CONFIG
+def add_to_config(user) -> None:
+    if user in config['users']:
+        return
+    config['users'][user.username] = {
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'id': user.id
+    }
+    with open('config.toml', 'w') as f:
+        toml.dump(config, f)
+
+
+# CHECKS
+
+async def check_queue_exists(update: Update, context: ContextTypes.DEFAULT_TYPE, key: str) -> bool:
     if key not in context.chat_data["queue"]:
-        await update.message.reply_text(text=text, read_timeout=Timeout, write_timeout=Timeout,
-                                        pool_timeout=Timeout, connect_timeout=Timeout)
+        await update.message.reply_text(text="Очередь не создана.", read_timeout=Timeout, write_timeout=Timeout,
+                                        pool_timeout=Timeout,
+                                        connect_timeout=Timeout)
         return False
     return True
 
 
-async def check_user(update: Update, context: ContextTypes.DEFAULT_TYPE, key: str) -> bool:
-    if update.effective_user in context.chat_data["queue"][key].iter():
-        await update.message.reply_text(text="Вы уже в этой очереди.", read_timeout=Timeout, write_timeout=Timeout,
+async def check_user_in_queue(update: Update, context: ContextTypes.DEFAULT_TYPE, key: str, username: str) -> bool:
+    user = config['users'][username]
+    if user in context.chat_data["queue"][key]:
+        await update.message.reply_text(text="Вы уже в очереди.", read_timeout=Timeout, write_timeout=Timeout,
                                         pool_timeout=Timeout, connect_timeout=Timeout)
         return False
-
     return True
 
 
@@ -79,16 +81,23 @@ async def check_admin(update: Update) -> bool:
     return True
 
 
+def check_in_base(username: str) -> bool:
+    return username in config['users']
+
+
+# WORK WITH QUEUE
+
 async def add_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     key = update.message.text.split(' ')
     key = "queue" if len(key) < 2 else key[1]
+
     if not await check_admin(update):
         return
     if key in context.chat_data["queue"]:
         await update.message.reply_text(text="Такая очередь уже создана.", read_timeout=Timeout, write_timeout=Timeout,
                                         pool_timeout=Timeout, connect_timeout=Timeout)
         return
-    context.chat_data['queue'][key] = Queue()
+    context.chat_data["queue"][key] = Queue()
     await update.message.reply_text(f"Очередь {key} создана!", read_timeout=Timeout, write_timeout=Timeout,
                                     pool_timeout=Timeout, connect_timeout=Timeout)
 
@@ -101,54 +110,21 @@ async def delete_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                                         pool_timeout=Timeout, connect_timeout=Timeout)
         return
     key = key[1]
-    if not (await check_queue(update, context, key) and await check_admin(update)):
+    if not (await check_queue_exists(update, context, key) and await check_admin(update)):
         return
     del context.chat_data["queue"][key]
     await update.message.reply_text(f"Очередь {key} удалена!", read_timeout=Timeout, write_timeout=Timeout,
                                     pool_timeout=Timeout, connect_timeout=Timeout)
 
 
-async def add_a_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    key = update.message.text.split(' ')
-    key = "queue" if len(key) < 2 else key[1]
-    if not await check_queue(update, context, key):
-        return
-    if not await check_user(update, context, key):
-        return
-
-    user = update.effective_user
-
-    context.chat_data['queue'][key].append(user)
-    await update.message.reply_text(
-        f"Вы добавлены в очередь {key}.\n"
-        f"Вы находитесь под номером {context.chat_data['queue'][key].index(user) + 1}.", read_timeout=Timeout,
-        write_timeout=Timeout, pool_timeout=Timeout, connect_timeout=Timeout)
-
-
-async def remove_a_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    key = update.message.text.split(' ')
-    key = "queue" if len(key) < 2 else key[1]
-    if not (await check_queue(update, context, key)):
-        return
-
-    user = update.effective_user
-    if user not in context.chat_data["queue"][key].iter():
-        await update.message.reply_text(text="Вас нет в очереди.", read_timeout=Timeout, write_timeout=Timeout,
-                                        pool_timeout=Timeout, connect_timeout=Timeout)
-        return
-
-    context.chat_data["queue"][key].remove(user)
-    await update.message.reply_text(f"Вас больше нет в очереди.", read_timeout=Timeout, write_timeout=Timeout,
-                                    pool_timeout=Timeout, connect_timeout=Timeout)
-
-
 async def show_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     key = update.message.text.split(' ')
     key = "queue" if len(key) < 2 else key[1]
-    if not await check_queue(update, context, key):
+
+    if not await check_queue_exists(update, context, key):
         return
 
-    await update.message.reply_text(context.chat_data["queue"][key].show() or "Пусто.", read_timeout=Timeout,
+    await update.message.reply_text(str(context.chat_data["queue"][key]), read_timeout=Timeout,
                                     write_timeout=Timeout,
                                     pool_timeout=Timeout, connect_timeout=Timeout)
 
@@ -161,19 +137,97 @@ async def show_active(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                                     pool_timeout=Timeout, connect_timeout=Timeout)
 
 
+# WORK WITH USER
+
+async def many_checks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> tuple:
+    key = update.message.text.split(' ')
+    queue_name, username, *_ = *key[1:], None, None
+
+    if not queue_name:
+        queue_name = "queue"
+    if not (await check_queue_exists(update, context, queue_name)):
+        return None, None, None
+
+    if username and not await check_admin(update):
+        return None, None, None
+
+    if not username:
+        username = update.effective_user.username
+        if not check_in_base(username):
+            add_to_config(update.effective_user)
+
+    username = username[1:] if username[0] == '@' else username
+    if not check_in_base(username):
+        await update.message.reply_text(text="Пользователь не найден.", read_timeout=Timeout, write_timeout=Timeout,
+                                        pool_timeout=Timeout, connect_timeout=Timeout)
+        return None, None, None
+
+    return config['users'][username], queue_name, username
+
+
+async def add_a_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user, queue_name, username = await many_checks(update, context)
+    if (user, queue_name, username) == (None, None, None):
+        return
+    if not await check_user_in_queue(update, context, queue_name, username):
+        return
+
+    index = context.chat_data["queue"][queue_name].append(user)
+    person = "Вы" if not username else f"{user['first_name']} {user['last_name'] or ''}"
+    await update.message.reply_text(
+        f"{person} добавлены в очередь {queue_name} на {index} место.",
+        read_timeout=Timeout, write_timeout=Timeout,
+        pool_timeout=Timeout, connect_timeout=Timeout)
+
+
+async def remove_a_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user, queue_name, username = await many_checks(update, context)
+    if (user, queue_name, username) == (None, None, None):
+        return
+    person = f"{user['first_name']} {user['last_name'] or ''}"
+
+    if user not in context.chat_data["queue"][queue_name]:
+        await update.message.reply_text(f"{person} нет в очереди.", read_timeout=Timeout, write_timeout=Timeout,
+                                        pool_timeout=Timeout, connect_timeout=Timeout)
+        return
+
+    context.chat_data["queue"][queue_name].remove(user)
+    await update.message.reply_text(f"{person} больше нет в очереди.", read_timeout=Timeout, write_timeout=Timeout,
+                                    pool_timeout=Timeout, connect_timeout=Timeout)
+
+
+async def push_to_priority(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user, queue_name, username = await many_checks(update, context)
+    if (user, queue_name, username) == (None, None, None):
+        return
+    person = f"{user['first_name']} {user['last_name'] or ''}"
+
+    if user not in context.chat_data["queue"][queue_name]:
+        await update.message.reply_text(f"{person} нет в очереди.", read_timeout=Timeout, write_timeout=Timeout,
+                                        pool_timeout=Timeout, connect_timeout=Timeout)
+        return
+
+    context.chat_data["queue"][queue_name].remove(user)
+    context.chat_data["queue"][queue_name].append(user, True)
+    await update.message.reply_text(f"{person} в приоритете.", read_timeout=Timeout, write_timeout=Timeout,
+                                    pool_timeout=Timeout, connect_timeout=Timeout)
+
+
+# OTHER STUFF
+
 async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         f"/create <название> - создаст новую очередь\n"
         f"/delete <название> <любой символ> - удалит очередь\n"
-        f"/add <название> - добавит вас в очередь\n"
-        f"/remove <название> - удалит вас из очереди\n"
+        f"/add <название> <@us_name> - добавит вас в очередь\n"
+        f"/remove <название> <@us_name> - удалит вас из очереди\n"
+        f"/push <название> <@us_name> - добавит вас в приоритет\n"
         f"/show <название> - покажет участников очереди\n"
         f"/active - покажет активные очереди\n"
         f"/all - пинганёт всех участников\n"
-        f"/push <название очереди> <индекс в очереди> - добавит в приоритетную очередь\n"
-        f"/force <название очереди> [p/n] <индекс в очереди> - удалит человека из (p) приоритетной или (n) обычной очереди\n"
         f"/help - покажет это сообщение\n"
-        f"Если не указывать <название>, то автоматически будет выбрано название queue", read_timeout=Timeout,
+        f"Если не указывать <название>, то автоматически будет выбрано название queue\n"
+        f"Если не указывать <@us_name>, то будет выбрано username вводившего", read_timeout=Timeout,
         write_timeout=Timeout, pool_timeout=Timeout, connect_timeout=Timeout)
 
 
@@ -189,78 +243,8 @@ async def ping_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if "queue" not in context.chat_data:
         context.chat_data["queue"] = dict()
+
     await update.message.reply_text("*звуки успешной активации*")
-
-
-async def push_a_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    key = update.message.text.split(' ')
-    if len(key) < 3:
-        await update.message.reply_text(text="Неправильны формат ввода.", read_timeout=Timeout, write_timeout=Timeout,
-                                        pool_timeout=Timeout, connect_timeout=Timeout)
-        return
-    if not await check_admin(update):
-        return
-    queue = key[1]
-    index = key[2]
-    if not index.isnumeric():
-        await update.message.reply_text(text="Такого индекса нет.", read_timeout=Timeout, write_timeout=Timeout,
-                                        pool_timeout=Timeout, connect_timeout=Timeout)
-        return
-    index = int(index)
-
-    if not (await check_queue(update, context, queue)):
-        return
-
-    if 0 > index or index > context.chat_data["queue"][queue].count()[0]:
-        await update.message.reply_text(text="Такого индекса нет.", read_timeout=Timeout, write_timeout=Timeout,
-                                        pool_timeout=Timeout, connect_timeout=Timeout)
-        return
-
-    cur_queue = context.chat_data["queue"][queue]
-    person = cur_queue.get(index - 1)
-    cur_queue.remove(person)
-    cur_queue.append_priority(person)
-    await update.message.reply_text(
-        text=f"{person['first_name']} {person['last_name'] or ''} перенесён в приоритетную очередь",
-        read_timeout=Timeout,
-        write_timeout=Timeout,
-        pool_timeout=Timeout, connect_timeout=Timeout)
-
-
-async def force_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    key = update.message.text.split(' ')
-    if len(key) < 4:
-        await update.message.reply_text(text="Неправильны формат ввода.", read_timeout=Timeout, write_timeout=Timeout,
-                                        pool_timeout=Timeout, connect_timeout=Timeout)
-        return
-    if not await check_admin(update):
-        return
-
-    queue = key[1]
-    type_of_queue = key[2]
-    index = key[3]
-    if not index.isnumeric():
-        await update.message.reply_text(text="Такого индекса нет.", read_timeout=Timeout, write_timeout=Timeout,
-                                        pool_timeout=Timeout, connect_timeout=Timeout)
-        return
-    index = int(index)
-    if type_of_queue not in ("p", "n"):
-        await update.message.reply_text(text="Такого ключа нет.", read_timeout=Timeout, write_timeout=Timeout,
-                                        pool_timeout=Timeout, connect_timeout=Timeout)
-        return
-    if 0 > index or index > context.chat_data["queue"][queue].count()[type_of_queue == "p"]:
-        await update.message.reply_text(text="Такого индекса нет.", read_timeout=Timeout, write_timeout=Timeout,
-                                        pool_timeout=Timeout, connect_timeout=Timeout)
-        return
-
-    cur_queue = context.chat_data["queue"][queue]
-    person = cur_queue.get(index - 1, type_of_queue)
-    cur_queue.remove(person)
-    await update.message.reply_text(
-        text=f"{person['first_name']} {person['last_name'] or ''} удалён",
-        read_timeout=Timeout,
-        write_timeout=Timeout,
-        pool_timeout=Timeout, connect_timeout=Timeout)
 
 
 if __name__ == "__main__":
@@ -275,7 +259,6 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("help", show_help))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("all", ping_all))
-    app.add_handler(CommandHandler("push", push_a_person))
-    app.add_handler(CommandHandler("force", force_remove))
+    app.add_handler(CommandHandler("push", push_to_priority))
 
     app.run_polling()
