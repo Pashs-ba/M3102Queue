@@ -9,6 +9,10 @@ Timeout = 100
 
 
 class Queue:
+    def __init__(self):
+        self.__priority = []
+        self.__normal = []
+
     def append(self, obj):
         self.__normal.append(obj)
 
@@ -50,8 +54,7 @@ class Queue:
         else:
             return self.__priority[index]
 
-    __priority = []
-    __normal = []
+
 
 
 async def check_queue(update: Update, context: ContextTypes.DEFAULT_TYPE, key: str, text="Очередь не создана.") -> bool:
