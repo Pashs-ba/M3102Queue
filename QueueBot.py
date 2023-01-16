@@ -9,6 +9,9 @@ Timeout = 100
 
 
 class Queue:
+    def __init__(self):
+        self.__normal = []
+        self.__priority = []
     def append(self, obj):
         self.__normal.append(obj)
 
