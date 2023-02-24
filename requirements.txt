@@ -17,3 +17,4 @@ toml==0.10.2
 tornado==6.2
 tzdata==2022.2
 tzlocal==4.2
+telebot
