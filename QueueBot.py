@@ -10,8 +10,9 @@ Timeout = 100
 
 class Queue:
     def __init__(self):
-        self.__normal = []
         self.__priority = []
+        self.__normal = []
+        
     def append(self, obj):
         self.__normal.append(obj)
 
@@ -52,9 +53,6 @@ class Queue:
             return self.__normal[index]
         else:
             return self.__priority[index]
-
-    __priority = []
-    __normal = []
 
 
 async def check_queue(update: Update, context: ContextTypes.DEFAULT_TYPE, key: str, text="Очередь не создана.") -> bool:
@@ -175,8 +173,10 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"/all - пинганёт всех участников\n"
         f"/push <название очереди> <индекс в очереди> - добавит в приоритетную очередь\n"
         f"/force <название очереди> [p/n] <индекс в очереди> - удалит человека из (p) приоритетной или (n) обычной очереди\n"
+        f"/ping [add/remove/show] <id пользователей через пробел> - добавит/удалит/покажет пользователей, которых нужно пинговать\n"
+        f"/dump - перезапишет конфиг\n"
         f"/help - покажет это сообщение\n"
-        f"Если не указывать <название>, то автоматически будет выбрано название queue", read_timeout=Timeout,
+        f"Если не указывать <название>, то автоматически будет выбрано название queue\n", read_timeout=Timeout,
         write_timeout=Timeout, pool_timeout=Timeout, connect_timeout=Timeout)
 
 
@@ -187,6 +187,37 @@ async def ping_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     to_ping = "Что-то важненькое происходит! " + " ".join([i for i in config['ID_to_ping']])
     await update.message.reply_text(to_ping, read_timeout=Timeout,
                                     write_timeout=Timeout, pool_timeout=Timeout, connect_timeout=Timeout)
+
+
+async def change_ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await check_admin(update):
+        return
+
+    key = update.message.text.split(' ')  # /add_ping add @id1 @id2 @id3
+    if key[1] == "add":
+        config['ID_to_ping'] += key[2:]
+        await update.message.reply_text(text="Добавлено.", read_timeout=Timeout, write_timeout=Timeout,
+                                        pool_timeout=Timeout, connect_timeout=Timeout)
+    elif key[1] == "remove":
+        for i in key[2:]:
+            config['ID_to_ping'].remove(i)
+        await update.message.reply_text(text="Удалено.", read_timeout=Timeout, write_timeout=Timeout,
+                                        pool_timeout=Timeout, connect_timeout=Timeout)
+    elif key[1] == "show":
+        # print without @ so [1:]
+        await update.message.reply_text(text=" ".join([i[1:] for i in config['ID_to_ping']]), read_timeout=Timeout,
+                                        write_timeout=Timeout, pool_timeout=Timeout, connect_timeout=Timeout)
+
+async def dump_config(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await check_admin(update):
+        return
+
+    #dump to toml
+    with open("config.toml", "w") as f:
+        toml.dump(config, f)
+
+    await update.message.reply_text(text="Конфиг сохранён.", read_timeout=Timeout, write_timeout=Timeout,
+                                    pool_timeout=Timeout, connect_timeout=Timeout)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -280,5 +311,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("all", ping_all))
     app.add_handler(CommandHandler("push", push_a_person))
     app.add_handler(CommandHandler("force", force_remove))
+    app.add_handler(CommandHandler("ping", change_ping))
+    app.add_handler(CommandHandler("dump", dump_config))
 
     app.run_polling()
