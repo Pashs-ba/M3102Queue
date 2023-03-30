@@ -12,7 +12,7 @@ class Queue:
     def __init__(self):
         self.__priority = []
         self.__normal = []
-
+        
     def append(self, obj):
         self.__normal.append(obj)
 
